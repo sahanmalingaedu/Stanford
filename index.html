@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Stanford University Q&A</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'stanford-red': '#8C1515',
+                        'stanford-red-dark': '#820000',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: sans-serif; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+        .prose strong { font-weight: bold; }
+        .prose h1, .prose h2, .prose h3 { margin-top: 1.5em; margin-bottom: 0.5em; font-weight: bold; }
+        .prose h1 { font-size: 1.875rem; }
+        .prose h2 { font-size: 1.5rem; }
+        .prose h3 { font-size: 1.25rem; }
+        .prose ul { list-style-type: disc; margin-left: 1.5rem; }
+        .prose p { margin-bottom: 1rem; line-height: 1.6; }
+        .prose li { margin-bottom: 0.5rem; }
+    </style>
+</head>
+<body class="bg-gray-50">
+
+    <div id="app" class="min-h-screen bg-gray-50 font-sans flex flex-col items-center">
+        <header class="bg-stanford-red text-white shadow-lg w-full">
+            <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-6 text-center">
+                <h1 class="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight">
+                    Stanford University Q&A
+                </h1>
+                <p class="mt-2 text-base sm:text-lg text-white opacity-90">
+                    Your guide to Stanford.
+                </p>
+            </div>
+        </header>
+
+        <main class="container mx-auto p-4 sm:p-6 lg:p-8 flex-grow w-full max-w-4xl">
+            <div class="bg-white p-6 sm:p-8 rounded-xl shadow-md transition-shadow duration-300 hover:shadow-lg">
+                <div id="form-container">
+                </div>
+                <div id="results-container">
+                </div>
+            </div>
+        </main>
+
+        <footer class="text-center py-4 text-gray-500 text-sm">
+            <p>© 2025 Stanford University Q&A.</p>
+            <p>Created by: Sahan Malinga</p>
+            <p>Contact: <a href="mailto:sahan.malinga.edu.25@gmail.com" class="text-stanford-red hover:underline">sahan.malinga.edu.25@gmail.com</a></p>
+        </footer>
+    </div>
+    
+    <script type="module">
+        import { GoogleGenAI } from "https://aistudiocdn.com/@google/genai@^1.26.0";
+
+        const API_KEY = "AIzaSyDyHd5u6_0T_HW9j-ZJGAQxiMxkdSjMPSY";
+
+        const formContainer = document.getElementById('form-container');
+        const resultsContainer = document.getElementById('results-container');
+        
+        function renderApp() {
+            formContainer.innerHTML = `
+                <form id="question-form" class="space-y-4">
+                    <label for="question" class="block text-xl font-semibold text-gray-800">
+                        Ask a question about Stanford
+                    </label>
+                    <textarea id="question" placeholder="e.g., What is the story behind the Stanford Tree mascot?" class="w-full h-32 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-stanford-red focus:border-stanford-red transition duration-150 ease-in-out resize-none text-gray-700"></textarea>
+                    <button id="submit-button" type="submit" class="w-full flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-stanford-red hover:bg-stanford-red-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stanford-red disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors duration-200">
+                        Ask Question
+                    </button>
+                </form>`;
+
+            const form = document.getElementById('question-form');
+            form.addEventListener('submit', handleAskQuestion);
+        }
+
+        async function handleAskQuestion(event) {
+            event.preventDefault();
+            const questionInput = document.getElementById('question');
+            const question = questionInput.value.trim();
+
+            if (!question) return;
+
+            setLoading(true);
+
+            try {
+
+                const ai = new GoogleGenAI({ apiKey: API_KEY });
+                const systemInstruction = `You are an expert assistant for Stanford. Your role is to answer questions strictly based on information found on the official Stanford website (stanford.edu) and its subdomains. You MUST NOT use any information from other websites or your general knowledge. If a question cannot be answered using only sources from stanford.edu, you must clearly state that the information is not available on the university's official website. Format your answers in markdown.`;
+                const restrictedQuestion = `${question} site:stanford.edu`;
+
+                const response = await ai.models.generateContent({
+                    model: "gemini-2.5-flash",
+                    contents: [{ role: 'user', parts: [{ text: restrictedQuestion }] }],
+                    config: {
+                        systemInstruction: systemInstruction,
+                        tools: [{ googleSearch: {} }],
+                    },
+                });
+
+                const answer = response.text;
+                const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+                const sources = groundingChunks
+                    .filter(chunk => chunk.web && chunk.web.uri)
+                    .map(chunk => ({
+                        uri: chunk.web.uri,
+                        title: chunk.web.title || chunk.web.uri,
+                    }));
+
+                renderAnswer({ answer, sources });
+            } catch (error) {
+                console.error("Error calling Gemini API:", error);
+                renderError(`Failed to get an answer. Please try again. Details: ${error.message}`);
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        function setLoading(isLoading) {
+            const questionInput = document.getElementById('question');
+            const submitButton = document.getElementById('submit-button');
+
+            if (isLoading) {
+                resultsContainer.innerHTML = `
+                    <div class="flex flex-col justify-center items-center p-8 my-4">
+                        <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-stanford-red"></div>
+                        <p class="mt-4 text-gray-600 text-lg">Thinking...</p>
+                    </div>`;
+                submitButton.disabled = true;
+                questionInput.disabled = true;
+                submitButton.innerHTML = `
+                    <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Getting Answer...`;
+            } else {
+                submitButton.disabled = false;
+                questionInput.disabled = false;
+                submitButton.innerHTML = 'Ask Question';
+            }
+        }
+        
+        function renderError(message) {
+            resultsContainer.innerHTML = `
+                <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 my-4 rounded-r-lg" role="alert">
+                    <p class="font-bold">Error</p>
+                    <p>${message}</p>
+                </div>`;
+        }
+        
+        function simpleMarkdownToHTML(markdown) {
+            if (!markdown) return '';
+            const lines = markdown.split('\n');
+            let html = '';
+            let inList = false;
+
+            for (const line of lines) {
+                if (/^\s*$/.test(line)) {
+                    if (inList) {
+                        html += '</ul>';
+                        inList = false;
+                    }
+                    html += '<p>&nbsp;</p>';
+                    continue;
+                }
+
+                let processedLine = line
+                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+
+                if (processedLine.startsWith('### ')) {
+                    if (inList) { html += '</ul>'; inList = false; }
+                    html += `<h3 class="text-lg font-semibold mt-4 mb-2">${processedLine.substring(4)}</h3>`;
+                } else if (processedLine.startsWith('## ')) {
+                    if (inList) { html += '</ul>'; inList = false; }
+                    html += `<h2 class="text-xl font-bold mt-5 mb-2">${processedLine.substring(3)}</h2>`;
+                } else if (processedLine.startsWith('# ')) {
+                    if (inList) { html += '</ul>'; inList = false; }
+                    html += `<h1 class="text-2xl font-extrabold mt-6 mb-3">${processedLine.substring(2)}</h1>`;
+                } else if (processedLine.startsWith('* ') || processedLine.startsWith('- ')) {
+                    if (!inList) {
+                        html += '<ul>';
+                        inList = true;
+                    }
+                    html += `<li class="ml-6 list-disc">${processedLine.substring(2)}</li>`;
+                } else {
+                     if (inList) {
+                        html += '</ul>';
+                        inList = false;
+                    }
+                    html += `<p>${processedLine}</p>`;
+                }
+            }
+
+            if (inList) {
+                html += '</ul>';
+            }
+            return html;
+        }
+
+        function renderAnswer({ answer, sources }) {
+            const sourcesHTML = sources.length > 0 ? `
+                <div class="mt-6">
+                    <h3 class="text-xl font-semibold text-gray-800 mb-3">Sources</h3>
+                    <ul class="space-y-2">
+                        ${sources.map(source => `
+                            <li class="flex items-start">
+                                <svg class="w-5 h-5 text-stanford-red mr-2 mt-1 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0l-1.5-1.5a2 2 0 112.828-2.828l1.5 1.5l3-3a2 2 0 010-2.828z" clip-rule="evenodd"></path><path fill-rule="evenodd" d="M3 3a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2H3z" clip-rule="evenodd"></path></svg>
+                                <a href="${source.uri}" target="_blank" rel="noopener noreferrer" class="text-stanford-red hover:underline break-all">
+                                    ${source.title}
+                                </a>
+                            </li>
+                        `).join('')}
+                    </ul>
+                </div>` : '';
+
+            resultsContainer.innerHTML = `
+                <div class="mt-6 border-t border-gray-200 pt-6">
+                    <h2 class="text-2xl font-bold text-gray-900 mb-4">Answer</h2>
+                    <div class="bg-gray-50 p-4 rounded-lg text-gray-800 prose max-w-none">
+                        ${simpleMarkdownToHTML(answer)}
+                    </div>
+                    ${sourcesHTML}
+                </div>`;
+        }
+
+        renderApp();
+    </script>
+</body>
+</html>
